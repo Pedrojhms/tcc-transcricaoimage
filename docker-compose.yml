@@ -1,0 +1,31 @@
+version: "3.8"
+
+services:
+  whatsapp:
+    build:
+      context: ./wpp
+      dockerfile: Dockerfile
+    container_name: whatsapp-bot
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+    volumes:
+      - ./wpp/sessions:/app/.wwebjs_auth  # Persistência das sessões do WhatsApp
+    working_dir: /app
+
+  app:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    container_name: java_app
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - whatsapp
+    environment:
+      - JAVA_OPTS=
+      - OPENAI_API_KEY=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
+    working_dir: /app
