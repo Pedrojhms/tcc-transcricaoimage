@@ -6,9 +6,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import tcc.transcricao.tcctranscricaoimage.exception.DescricaoImagemException;
 import tcc.transcricao.tcctranscricaoimage.exception.TtsException;
+import tcc.transcricao.tcctranscricaoimage.model.PerformanceMetric;
 import tcc.transcricao.tcctranscricaoimage.processor.ExceptionToHttpResponseProcessor;
+import tcc.transcricao.tcctranscricaoimage.repository.PerformanceMetricRepository;
 import tcc.transcricao.tcctranscricaoimage.service.ImageDescriptionService;
 import tcc.transcricao.tcctranscricaoimage.service.TtsService;
+
+import java.time.LocalDateTime;
 
 @Component
 public class DescribeImageRoute extends RouteBuilder {
@@ -19,6 +23,8 @@ public class DescribeImageRoute extends RouteBuilder {
     private TtsService ttsService;
     @Autowired
     private ExceptionToHttpResponseProcessor exceptionToHttpResponseProcessor;
+    @Autowired
+    private PerformanceMetricRepository metricRepository;
 
     @Override
     public void configure() {
@@ -35,6 +41,7 @@ public class DescribeImageRoute extends RouteBuilder {
                 .routeId("whatsapp-webhook-route")
                 .log("Webhook do whatsapp recebido!")
                 .process(exchange -> {
+                    exchange.setProperty("startTime", System.currentTimeMillis());
                     String body = exchange.getIn().getBody(String.class);
                     JSONObject webhookJson = new JSONObject(body);
                     String phone = webhookJson.getString("from");
@@ -45,6 +52,34 @@ public class DescribeImageRoute extends RouteBuilder {
                 .wireTap("direct:send-confirmation")
                 .to("direct:process-image-and-audio")
                 .to("direct:send-whatsapp-voice")
+                .process(exchange -> {
+                    long start = (long) exchange.getProperty("startTime");
+                    long desc = (long) exchange.getProperty("descTime");
+                    long tts = (long) exchange.getProperty("ttsTime");
+                    long send = System.currentTimeMillis();
+                    String phone = (String) exchange.getProperty("phone");
+
+                    long tempoDescricao = desc - start;
+                    long tempoTts = tts - desc;
+                    long tempoEnvio = send - tts;
+                    long tempoTotal = send - start;
+
+                    // Log detalhado
+                    log.info("Tempo descrição: {}ms", tempoDescricao);
+                    log.info("Tempo TTS: {}ms", tempoTts);
+                    log.info("Tempo envio: {}ms", tempoEnvio);
+                    log.info("Tempo total: {}ms", tempoTotal);
+
+                    // Salva métrica
+                    PerformanceMetric metric = new PerformanceMetric();
+                    metric.setTempoDescricao(tempoDescricao);
+                    metric.setTempoTts(tempoTts);
+                    metric.setTempoEnvio(tempoEnvio);
+                    metric.setTempoTotal(tempoTotal);
+                    metric.setPhone(phone);
+                    metric.setData(LocalDateTime.now());
+                    metricRepository.save(metric);
+                })
                 .setBody(constant("OK"));
 
         from("direct:send-confirmation")
@@ -71,6 +106,7 @@ public class DescribeImageRoute extends RouteBuilder {
                     String descricao = (String) exchange.getProperty("descricao");
                     String audioBase64 = ttsService.synthesizeAsBase64(descricao);
                     exchange.setProperty("audioBase64", audioBase64);
+                    exchange.setProperty("descTime", System.currentTimeMillis());
                 })
                 .log("Áudio gerado em base64!");
 
@@ -84,6 +120,7 @@ public class DescribeImageRoute extends RouteBuilder {
                     payload.put("audioBase64", audioBase64);
                     exchange.getIn().setHeader("Content-Type", "application/json");
                     exchange.getIn().setBody(payload.toString());
+                    exchange.setProperty("ttsTime", System.currentTimeMillis());
                 })
                 .to("http://whatsapp:3000/sendVoice?bridgeEndpoint=true&throwExceptionOnFailure=false");
     }
