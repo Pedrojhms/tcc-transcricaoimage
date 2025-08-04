@@ -35,3 +35,6 @@ build/
 ### WPP ###
 /wpp/sessions/*
 /audios/*
+
+### DB ###
+/data/*

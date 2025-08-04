@@ -52,6 +52,12 @@ public class DescribeImageRoute extends RouteBuilder {
                 .wireTap("direct:send-confirmation")
                 .to("direct:process-image-and-audio")
                 .to("direct:send-whatsapp-voice")
+                .to("direct:detail-db-metrics")
+                .log("Métricas salvas na base de dados!")
+                .setBody(constant("OK"));
+
+        from("direct:detail-db-metrics")
+                .log("Iniciando log DB métricas")
                 .process(exchange -> {
                     long start = (long) exchange.getProperty("startTime");
                     long desc = (long) exchange.getProperty("descTime");
@@ -65,10 +71,10 @@ public class DescribeImageRoute extends RouteBuilder {
                     long tempoTotal = send - start;
 
                     // Log detalhado
-                    log.info("Tempo descrição: {}ms", tempoDescricao);
-                    log.info("Tempo TTS: {}ms", tempoTts);
-                    log.info("Tempo envio: {}ms", tempoEnvio);
-                    log.info("Tempo total: {}ms", tempoTotal);
+//                    log.info("Tempo descrição: {}ms", tempoDescricao);
+//                    log.info("Tempo TTS: {}ms", tempoTts);
+//                    log.info("Tempo envio: {}ms", tempoEnvio);
+//                    log.info("Tempo total: {}ms", tempoTotal);
 
                     // Salva métrica
                     PerformanceMetric metric = new PerformanceMetric();
@@ -79,8 +85,7 @@ public class DescribeImageRoute extends RouteBuilder {
                     metric.setPhone(phone);
                     metric.setData(LocalDateTime.now());
                     metricRepository.save(metric);
-                })
-                .setBody(constant("OK"));
+                });
 
         from("direct:send-confirmation")
                 .process(exchange -> {
