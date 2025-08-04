@@ -15,6 +15,18 @@ services:
       - ./wpp/sessions:/app/.wwebjs_auth  # Persistência das sessões do WhatsApp
     working_dir: /app
 
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB: tcc_db
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ./data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
   app:
     build:
       context: .
@@ -25,7 +37,10 @@ services:
       - "8080:8080"
     depends_on:
       - whatsapp
+      - db
     environment:
-      - JAVA_OPTS=
-      - OPENAI_API_KEY=
+      DB_URL: ${DB_URL}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
     working_dir: /app
