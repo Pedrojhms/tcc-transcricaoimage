@@ -1,14 +1,11 @@
 package tcc.transcricao.tcctranscricaoimage.service;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+
+import java.util.Base64;
 
 @Service
 public class TtsService {
@@ -44,5 +41,10 @@ public class TtsService {
         }
 
         return response.getBody();
+    }
+
+    public String synthesizeAsBase64(String text) {
+        byte[] audio = synthesize(text);
+        return Base64.getEncoder().encodeToString(audio);
     }
 }
