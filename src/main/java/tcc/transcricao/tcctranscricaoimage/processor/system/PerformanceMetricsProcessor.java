@@ -1,4 +1,4 @@
-package tcc.transcricao.tcctranscricaoimage.processor;
+package tcc.transcricao.tcctranscricaoimage.processor.system;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,8 +45,7 @@ public class PerformanceMetricsProcessor implements Processor {
 
             metricRepository.save(metric);
 
-            log.info("Métricas salvas - Total: {}ms, Descrição: {}ms, TTS: {}ms, Envio: {}ms",
-                    tempoTotal, tempoDescricao, tempoTts, tempoEnvio);
+            log.info("Métricas salvas - Total: {}ms, Descrição: {}ms, TTS: {}ms, Envio: {}ms", tempoTotal, tempoDescricao, tempoTts, tempoEnvio);
 
         } catch (Exception e) {
             log.error("Erro ao processar métricas de performance", e);

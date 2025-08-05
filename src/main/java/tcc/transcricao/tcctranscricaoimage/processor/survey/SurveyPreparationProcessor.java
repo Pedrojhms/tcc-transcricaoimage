@@ -1,4 +1,4 @@
-package tcc.transcricao.tcctranscricaoimage.processor;
+package tcc.transcricao.tcctranscricaoimage.processor.survey;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.camel.Exchange;

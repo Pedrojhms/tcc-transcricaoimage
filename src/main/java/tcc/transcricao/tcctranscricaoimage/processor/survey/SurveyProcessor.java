@@ -1,4 +1,4 @@
-package tcc.transcricao.tcctranscricaoimage.processor;
+package tcc.transcricao.tcctranscricaoimage.processor.survey;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,7 +37,7 @@ public class SurveyProcessor implements Processor {
             exchange.getIn().setHeader(SurveyConstants.CONTENT_TYPE_HEADER, SurveyConstants.APPLICATION_JSON);
             exchange.getIn().setBody(payload.toString());
 
-            log.debug("Payload do questionário preparado para envio: {}", payload.toString());
+            log.debug("Payload do questionário preparado para envio: {}", payload);
 
         } catch (Exception e) {
             log.error("Erro ao processar início do questionário", e);

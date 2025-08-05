@@ -1,4 +1,4 @@
-package tcc.transcricao.tcctranscricaoimage.processor;
+package tcc.transcricao.tcctranscricaoimage.processor.system;
 
 import org.apache.camel.Exchange;
 import org.apache.camel.Processor;

@@ -4,39 +4,47 @@ import lombok.RequiredArgsConstructor;
 import org.apache.camel.builder.RouteBuilder;
 import org.springframework.stereotype.Component;
 import tcc.transcricao.tcctranscricaoimage.constants.SurveyConstants;
-import tcc.transcricao.tcctranscricaoimage.processor.SurveyProcessor;
-import tcc.transcricao.tcctranscricaoimage.processor.SurveyResponseProcessor;
+import tcc.transcricao.tcctranscricaoimage.constants.WhatsAppConstants;
+import tcc.transcricao.tcctranscricaoimage.processor.chain.ProcessorRegistry;
 
 @Component
 @RequiredArgsConstructor
 public class SatisfactionSurveyRoute extends RouteBuilder {
 
-    private final SurveyProcessor surveyProcessor;
-    private final SurveyResponseProcessor surveyResponseProcessor;
+    private final ProcessorRegistry processorRegistry;
 
     @Override
-    public void configure() throws Exception {
+    public void configure() {
 
-        // Configuração global de tratamento de erros
+        // Tratamento de erros
         onException(Exception.class)
                 .handled(true)
-                .log("Erro no questionário de satisfação: ${exception.message}")
-                .setBody(constant("{\"error\": true, \"message\": \"Erro interno do servidor\"}"))
-                .setHeader(SurveyConstants.CONTENT_TYPE_HEADER, constant(SurveyConstants.APPLICATION_JSON));
+                .log("Erro no survey: ${exception.message}")
+                .process(processorRegistry.getSystemChain().getExceptionProcessor());
 
-        // Route: Inicia o questionário - envia a primeira pergunta via WhatsApp
+        // ENDPOINT REST PARA RECEBER RESPOSTAS DO SURVEY
+        from(SurveyConstants.SURVEY_RESPONSE_ENDPOINT)
+                .routeId("whatsapp-survey-endpoint")
+                .to(SurveyConstants.PROCESS_SURVEY_RESPONSE_ENDPOINT)
+                .log(SurveyConstants.RESPONSE_PROCESSED_LOG);
+
+        // Route Principal do Survey
         from(SurveyConstants.START_SURVEY_ENDPOINT)
-                .routeId("start-satisfaction-survey")
-                .log("Iniciando questionário de satisfação")
-                .process(surveyProcessor)
-                .to(SurveyConstants.WHATSAPP_SEND_TEXT_URL)
+                .routeId("satisfaction-survey-route")
+                .process(processorRegistry.getSurveyChain().getSurveyProcessor())
+                .to(SurveyConstants.SEND_SURVEY_MESSAGE_ENDPOINT)
                 .log(SurveyConstants.SURVEY_STARTED_LOG);
 
-        // Route: Recebe resposta do questionário, salva e retorna próxima pergunta OU finaliza
-        from(SurveyConstants.SURVEY_RESPONSE_ENDPOINT)
-                .routeId("process-satisfaction-survey-response")
-                .log("Processando resposta do questionário de satisfação")
-                .process(surveyResponseProcessor)
-                .log(SurveyConstants.RESPONSE_PROCESSED_LOG);
+        // Sub-routes do Survey
+        from(SurveyConstants.SEND_SURVEY_MESSAGE_ENDPOINT)
+                .routeId("send-survey-message")
+                .process(processorRegistry.getSurveyChain().getMessageProcessor())
+                .to(SurveyConstants.WHATSAPP_SEND_TEXT_URL)
+                .log(SurveyConstants.SURVEY_MESSAGE_SENT_LOG);
+
+        from(SurveyConstants.PROCESS_SURVEY_RESPONSE_ENDPOINT)
+                .routeId("process-survey-response")
+                .process(processorRegistry.getSurveyChain().getResponseProcessor())
+                .log(SurveyConstants.SURVEY_RESPONSE_PROCESSED_LOG);
     }
 }

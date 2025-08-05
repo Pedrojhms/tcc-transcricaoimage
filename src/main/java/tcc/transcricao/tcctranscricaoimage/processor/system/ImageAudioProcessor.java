@@ -1,4 +1,4 @@
-package tcc.transcricao.tcctranscricaoimage.processor;
+package tcc.transcricao.tcctranscricaoimage.processor.system;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
