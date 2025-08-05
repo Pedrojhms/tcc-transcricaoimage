@@ -134,7 +134,6 @@ client.on('message', async (message) => {
             }
         };
         await axios.post(URL_JAVA_APP + '/whatsapp-webhook', payload);
-        console.log('Mensagem enviada para o webhook:', payload);
     }
 });
 
