@@ -1,145 +1,83 @@
 package tcc.transcricao.tcctranscricaoimage.route;
 
+import lombok.RequiredArgsConstructor;
 import org.apache.camel.builder.RouteBuilder;
-import org.json.JSONObject;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import tcc.transcricao.tcctranscricaoimage.constants.WhatsAppConstants;
 import tcc.transcricao.tcctranscricaoimage.exception.DescricaoImagemException;
 import tcc.transcricao.tcctranscricaoimage.exception.TtsException;
-import tcc.transcricao.tcctranscricaoimage.model.PerformanceMetric;
-import tcc.transcricao.tcctranscricaoimage.processor.ExceptionToHttpResponseProcessor;
-import tcc.transcricao.tcctranscricaoimage.repository.PerformanceMetricRepository;
-import tcc.transcricao.tcctranscricaoimage.service.ImageDescriptionService;
-import tcc.transcricao.tcctranscricaoimage.service.TtsService;
-
-import java.time.LocalDateTime;
-import java.util.UUID;
+import tcc.transcricao.tcctranscricaoimage.processor.*;
 
 @Component
+@RequiredArgsConstructor
 public class DescribeImageRoute extends RouteBuilder {
 
-    private static final String URL_SEND_MENSAGE = "http://whatsapp:3000/sendText?bridgeEndpoint=true&throwExceptionOnFailure=false";
-
-    private static final String URL_SEND_VOICE = "http://whatsapp:3000/sendVoice?bridgeEndpoint=true&throwExceptionOnFailure=false";
-
-    @Autowired
-    private ImageDescriptionService imageDescriptionService;
-    @Autowired
-    private TtsService ttsService;
-    @Autowired
-    private ExceptionToHttpResponseProcessor exceptionToHttpResponseProcessor;
-    @Autowired
-    private PerformanceMetricRepository metricRepository;
+    private final WhatsAppWebhookProcessor webhookProcessor;
+    private final ConfirmationProcessor confirmationProcessor;
+    private final ImageAudioProcessor imageAudioProcessor;
+    private final VoiceMessageProcessor voiceMessageProcessor;
+    private final PerformanceMetricsProcessor performanceMetricsProcessor;
+    private final SurveyPreparationProcessor surveyPreparationProcessor;
+    private final ExceptionToHttpResponseProcessor exceptionToHttpResponseProcessor;
 
     @Override
     public void configure() {
 
+        // Configuração global de tratamento de erros
         onException(DescricaoImagemException.class)
                 .handled(true)
+                .log("Erro de descrição de imagem: ${exception.message}")
                 .process(exceptionToHttpResponseProcessor);
 
         onException(TtsException.class)
                 .handled(true)
+                .log("Erro de síntese de voz: ${exception.message}")
                 .process(exceptionToHttpResponseProcessor);
 
-        from("rest:POST:/whatsapp-webhook")
+        onException(Exception.class)
+                .handled(true)
+                .log("Erro geral no processamento: ${exception.message}")
+                .process(exceptionToHttpResponseProcessor);
+
+        // Route Principal: Webhook do WhatsApp
+        from(WhatsAppConstants.WEBHOOK_ENDPOINT)
                 .routeId("whatsapp-webhook-route")
-                .log("Webhook do whatsapp recebido!")
-                .process(exchange -> {
-                    String body = exchange.getIn().getBody(String.class);
-                    JSONObject webhookJson = new JSONObject(body);
-                    String phone = webhookJson.getString("from");
-                    String imageBase64 = webhookJson.getJSONObject("media").getString("data");
-                    String imageId = UUID.randomUUID().toString();
-
-                    exchange.setProperty("startTime", System.currentTimeMillis());
-                    exchange.setProperty("imageId", imageId);
-                    exchange.setProperty("phone", phone);
-                    exchange.setProperty("imageBase64", imageBase64);
-                })
-                .wireTap("direct:send-confirmation")
-                .to("direct:process-image-and-audio")
-                .to("direct:send-whatsapp-voice")
-                .to("direct:detail-db-metrics")
-                .log("Métricas salvas na base de dados!")
-                .process(exchange -> {
-                    String phone = (String) exchange.getProperty("phone");
-                    String imageId = (String) exchange.getProperty("imageId"); // Defina conforme seu contexto
-
-                    JSONObject json = new JSONObject();
-                    json.put("phone", phone);
-                    json.put("imageId", imageId);
-                    exchange.getIn().setBody(json.toString());
-                })
-                .to("direct:start-survey")
+                .log(WhatsAppConstants.WEBHOOK_RECEIVED_LOG)
+                .process(webhookProcessor)
+                .wireTap(WhatsAppConstants.SEND_CONFIRMATION_ENDPOINT)
+                .to(WhatsAppConstants.PROCESS_IMAGE_AUDIO_ENDPOINT)
+                .to(WhatsAppConstants.SEND_VOICE_ENDPOINT)
+                .to(WhatsAppConstants.DB_METRICS_ENDPOINT)
+                .log(WhatsAppConstants.METRICS_SAVED_LOG)
+                .process(surveyPreparationProcessor)
+                .to(WhatsAppConstants.START_SURVEY_ENDPOINT)
                 .setBody(constant("OK"));
 
-        from("direct:detail-db-metrics")
-                .log("Iniciando log DB métricas")
-                .process(exchange -> {
-                    long start = (long) exchange.getProperty("startTime");
-                    long desc = (long) exchange.getProperty("descTime");
-                    long tts = (long) exchange.getProperty("ttsTime");
-                    long send = System.currentTimeMillis();
-                    String phone = (String) exchange.getProperty("phone");
+        // Route: Envio de Confirmação
+        from(WhatsAppConstants.SEND_CONFIRMATION_ENDPOINT)
+                .routeId("send-confirmation-route")
+                .process(confirmationProcessor)
+                .to(WhatsAppConstants.WHATSAPP_SEND_TEXT_URL);
 
-                    long tempoDescricao = desc - start;
-                    long tempoTts = tts - desc;
-                    long tempoEnvio = send - tts;
-                    long tempoTotal = send - start;
+        // Route: Processamento de Imagem e Áudio
+        from(WhatsAppConstants.PROCESS_IMAGE_AUDIO_ENDPOINT)
+                .routeId("process-image-audio-route")
+                .log(WhatsAppConstants.IMAGE_PROCESSING_START_LOG)
+                .process(imageAudioProcessor)
+                .log(WhatsAppConstants.DESCRIPTION_GENERATED_LOG)
+                .log(WhatsAppConstants.AUDIO_GENERATED_LOG);
 
-                    PerformanceMetric metric = new PerformanceMetric();
-                    metric.setTempoDescricao(tempoDescricao);
-                    metric.setTempoTts(tempoTts);
-                    metric.setTempoEnvio(tempoEnvio);
-                    metric.setTempoTotal(tempoTotal);
-                    metric.setPhone(phone);
-                    metric.setData(LocalDateTime.now());
-                    metricRepository.save(metric);
-                });
+        // Route: Envio de Mensagem de Voz
+        from(WhatsAppConstants.SEND_VOICE_ENDPOINT)
+                .routeId("send-voice-route")
+                .log(WhatsAppConstants.SENDING_VOICE_LOG)
+                .process(voiceMessageProcessor)
+                .to(WhatsAppConstants.WHATSAPP_SEND_VOICE_URL);
 
-        from("direct:send-confirmation")
-                .process(exchange -> {
-                    String chatId = (String) exchange.getProperty("phone");
-                    JSONObject payload = new JSONObject();
-                    payload.put("to", chatId);
-                    payload.put("message", "Imagem recebida com sucesso! Estamos processando sua solicitação.");
-                    exchange.getIn().setHeader("Content-Type", "application/json");
-                    exchange.getIn().setBody(payload.toString());
-                })
-                .to(URL_SEND_MENSAGE);
-
-        from("direct:process-image-and-audio")
-                .log("Iniciando processamento de imagem e síntese de áudio")
-                .process(exchange -> {
-                    String imageBase64 = (String) exchange.getProperty("imageBase64");
-                    String descricao = imageDescriptionService.getDescription(imageBase64);
-
-                    exchange.setProperty("descricao", descricao);
-                })
-                .log("Descrição gerada!")
-                .process(exchange -> {
-                    String descricao = (String) exchange.getProperty("descricao");
-                    String audioBase64 = ttsService.synthesizeAsBase64(descricao);
-
-                    exchange.setProperty("audioBase64", audioBase64);
-                    exchange.setProperty("descTime", System.currentTimeMillis());
-                })
-                .log("Áudio gerado em base64!");
-
-        from("direct:send-whatsapp-voice")
-                .log("Enviando áudio para o Whatsapp /sendVoice")
-                .process(exchange -> {
-                    String to = (String) exchange.getProperty("phone");
-                    String audioBase64 = (String) exchange.getProperty("audioBase64");
-                    JSONObject payload = new JSONObject();
-                    payload.put("to", to);
-                    payload.put("audioBase64", audioBase64);
-
-                    exchange.getIn().setHeader("Content-Type", "application/json");
-                    exchange.getIn().setBody(payload.toString());
-                    exchange.setProperty("ttsTime", System.currentTimeMillis());
-                })
-                .to(URL_SEND_VOICE);
+        // Route: Salvamento de Métricas
+        from(WhatsAppConstants.DB_METRICS_ENDPOINT)
+                .routeId("db-metrics-route")
+                .log(WhatsAppConstants.DB_METRICS_START_LOG)
+                .process(performanceMetricsProcessor);
     }
 }
