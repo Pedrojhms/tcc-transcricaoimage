@@ -71,7 +71,7 @@ public class OpenAIResponseProcessor {
     private String extractDescriptionFromJson(JsonNode jsonNode) throws DescricaoImagemException {
         try {
             JsonNode choicesNode = jsonNode.path(OpenAIConstants.CHOICES_PATH);
-            if (choicesNode.isMissingNode() || !choicesNode.isArray() || choicesNode.size() == 0) {
+            if (choicesNode.isMissingNode() || !choicesNode.isArray() || choicesNode.isEmpty()) {
                 throw new DescricaoImagemException("Estrutura de resposta inválida: 'choices' não encontrado");
             }
 
