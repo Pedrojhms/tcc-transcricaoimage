@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import org.apache.camel.builder.RouteBuilder;
 import org.springframework.stereotype.Component;
 import tcc.transcricao.tcctranscricaoimage.constants.SurveyConstants;
-import tcc.transcricao.tcctranscricaoimage.constants.WhatsAppConstants;
 import tcc.transcricao.tcctranscricaoimage.processor.chain.ProcessorRegistry;
 
 @Component

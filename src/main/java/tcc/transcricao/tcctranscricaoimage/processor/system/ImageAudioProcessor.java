@@ -32,7 +32,7 @@ public class ImageAudioProcessor implements Processor {
         }
     }
 
-    private void processImageDescription(Exchange exchange) throws Exception {
+    private void processImageDescription(Exchange exchange) {
         String imageBase64 = (String) exchange.getProperty(WhatsAppConstants.IMAGE_BASE64_PROPERTY);
 
         if (imageBase64 == null || imageBase64.trim().isEmpty()) {
@@ -48,7 +48,7 @@ public class ImageAudioProcessor implements Processor {
         log.info("Descrição gerada com sucesso: {} caracteres", descricao.length());
     }
 
-    private void processAudioSynthesis(Exchange exchange) throws Exception {
+    private void processAudioSynthesis(Exchange exchange) {
         String descricao = (String) exchange.getProperty(WhatsAppConstants.DESCRIPTION_PROPERTY);
 
         if (descricao == null || descricao.trim().isEmpty()) {

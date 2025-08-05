@@ -45,19 +45,6 @@ public class ProcessorRegistry {
     }
 
     /**
-     * Valida se todas as chains estão prontas
-     * @return true se todas as chains estão configuradas
-     */
-    public boolean areAllChainsReady() {
-        boolean ready = whatsAppChain.isChainReady() &&
-                surveyChain.isChainReady() &&
-                systemChain.isChainReady();
-
-        log.info("All Processor Chains ready: {}", ready);
-        return ready;
-    }
-
-    /**
      * Logs detalhados sobre o status das chains
      */
     public void logChainStatus() {

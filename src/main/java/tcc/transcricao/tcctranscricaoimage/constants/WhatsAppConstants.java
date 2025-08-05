@@ -37,8 +37,6 @@ public final class WhatsAppConstants {
     // Log Messages
     public static final String WEBHOOK_RECEIVED_LOG = "Webhook do whatsapp recebido!";
     public static final String METRICS_SAVED_LOG = "Métricas salvas na base de dados!";
-    public static final String DB_METRICS_START_LOG = "Iniciando log DB métricas";
-    public static final String IMAGE_PROCESSING_START_LOG = "Iniciando processamento de imagem e síntese de áudio";
     public static final String DESCRIPTION_GENERATED_LOG = "Descrição gerada!";
     public static final String AUDIO_GENERATED_LOG = "Áudio gerado e disponibilizado!";
     public static final String CONFIRMATION_RECEIVED_LOG = "Imagem recebida com sucesso!";
