@@ -8,6 +8,9 @@ const bodyParser = require('body-parser');
 
 const QR_SAVE_PATH = path.resolve(__dirname, 'qrcode.png');
 const app = express();
+
+const URL_JAVA_APP = "http://app:8080/api";
+
 app.use(bodyParser.json({limit: '50mb'}));
 
 const client = new Client({
@@ -17,6 +20,10 @@ const client = new Client({
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
 });
+
+// Estado por usuário
+// userState[userId] = { sentImage: bool, audioSent: bool, imageId: string, questionNumber: int }
+const userState = {};
 
 // QR code
 client.on('qr', (qr) => {
@@ -38,9 +45,78 @@ client.on('ready', () => {
     console.log('Cliente está pronto!');
 });
 
-// Recebe mensagens e encaminha para webhook
+// RECEBE MENSAGENS
 client.on('message', async (message) => {
-    try {
+    const userId = message.from;
+    // Inicializa estado do usuário
+    userState[userId] = userState[userId] || { sentImage: false, audioSent: false, imageId: null, questionNumber: 1 };
+
+    // Se veio texto antes de imagem
+    if (message.type === 'chat' && !message.hasMedia && !userState[userId].sentImage) {
+        await client.sendMessage(userId,
+            'Por favor, envie uma imagem pela galeria ou câmera do seu celular para gerar a descrição antes de enviar mensagens de texto.');
+        return;
+    }
+
+    // Se veio texto, mas o áudio ainda não foi enviado (aguardando processamento)
+    if (message.type === 'chat' && userState[userId].sentImage && !userState[userId].audioSent) {
+        await client.sendMessage(userId,
+            'Aguarde o envio do áudio com a descrição antes de responder ao questionário.');
+        return;
+    }
+
+    // Se veio texto, áudio já foi enviado: resposta do questionário
+    if (message.type === 'chat' && userState[userId].sentImage && userState[userId].audioSent) {
+        // Envia a resposta para o backend, recebe próxima pergunta ou mensagem final
+        try {
+            const score = message.body.trim();
+            if (!['1','2','3','4','5'].includes(score)) {
+                await client.sendMessage(userId, 'Por favor, responda apenas com um número de 1 a 5.');
+                return;
+            }
+
+            // Recupera dados do estado do usuário
+            const imageId = userState[userId].imageId;
+
+            const payload = {
+                from: userId,
+                imageId: imageId,
+                questionNumber: userState[userId].questionNumber,
+                score: parseInt(score)
+            };
+
+            // Envia para o backend
+            const response = await axios.post(URL_JAVA_APP + '/whatsapp-survey', payload);
+
+            // Incrementa o número da pergunta para o próximo envio
+            userState[userId].questionNumber++;
+
+            // Envia próxima pergunta ou mensagem final
+            const nextMessage = response.data.message || '✅ Obrigado!';
+            await client.sendMessage(userId, nextMessage);
+
+            // Se o backend sinalizar fim do questionário, limpa estado
+            if (response.data.finished) {
+                userState[userId].sentImage = false;
+                userState[userId].audioSent = false;
+                userState[userId].imageId = null;
+                userState[userId].questionNumber = 1;
+            }
+        } catch (err) {
+            console.error('Erro ao enviar resposta do questionário:', err);
+            await client.sendMessage(userId, 'Ocorreu um erro ao enviar sua resposta, tente novamente.');
+        }
+        return;
+    }
+
+    // Se veio imagem/mídia
+    if (message.hasMedia) {
+        userState[userId].sentImage = true;
+        userState[userId].audioSent = false;
+        userState[userId].imageId = null;
+        userState[userId].questionNumber = 1; // Reinicia questionário ao receber nova imagem
+
+        const media = await message.downloadMedia();
         const payload = {
             id: message.id._serialized,
             from: message.from,
@@ -51,21 +127,14 @@ client.on('message', async (message) => {
             author: message.author,
             isForwarded: message.isForwarded,
             hasMedia: message.hasMedia,
-        };
-
-        if (message.hasMedia) {
-            const media = await message.downloadMedia();
-            payload.media = {
+            media: {
                 mimetype: media.mimetype,
-                data: media.data, // base64 string
+                data: media.data,
                 filename: media.filename || null
-            };
-        }
-
-        await axios.post('http://app:8080/api/whatsapp-webhook', payload);
+            }
+        };
+        await axios.post(URL_JAVA_APP + '/whatsapp-webhook', payload);
         console.log('Mensagem enviada para o webhook:', payload);
-    } catch (err) {
-        console.error('Erro ao enviar mensagem para o webhook:', err.message);
     }
 });
 
@@ -75,12 +144,18 @@ client.initialize();
 
 // Enviar mensagem de texto
 app.post('/sendText', async (req, res) => {
-    const { to, message } = req.body;
+    const { to, message, imageId } = req.body;
     if (!to || !message) {
         return res.status(400).json({ error: 'Parâmetros "to" e "message" são obrigatórios.' });
     }
     try {
         await client.sendMessage(to, message);
+        // Se receber imageId, salva para uso nas respostas e inicia questionário
+        if (imageId) {
+            userState[to] = userState[to] || {};
+            userState[to].imageId = imageId;
+            userState[to].questionNumber = 1;
+        }
         res.status(200).json({ status: 'OK', to, message });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -89,19 +164,24 @@ app.post('/sendText', async (req, res) => {
 
 // Enviar mensagem de voz (áudio .ogg base64)
 app.post('/sendVoice', async (req, res) => {
-
     if (!whatsappReady) {
         return res.status(503).json({ error: 'WhatsApp não está pronto. Aguarde.' });
     }
 
-    const { to, audioBase64 } = req.body;
+    const { to, audioBase64, imageId } = req.body;
     if (!to || !audioBase64) {
         return res.status(400).json({ error: 'Parâmetros "to" e "audioBase64" são obrigatórios.' });
     }
     try {
-        // O mimetype do WhatsApp para áudio (voice message) é 'audio/ogg; codecs=opus'
         const media = new MessageMedia('audio/ogg; codecs=opus', audioBase64, 'audio.ogg');
         await client.sendMessage(to, media, { sendAudioAsVoice: true });
+        // Marca que o áudio foi enviado, libera questionário
+        userState[to] = userState[to] || {};
+        userState[to].audioSent = true;
+        // Se receber imageId, salva para uso nas respostas
+        if (imageId) {
+            userState[to].imageId = imageId;
+        }
         res.status(200).json({ status: 'OK', to });
     } catch (err) {
         res.status(500).json({ error: err.message });

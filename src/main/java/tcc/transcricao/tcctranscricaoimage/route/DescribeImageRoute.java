@@ -13,9 +13,14 @@ import tcc.transcricao.tcctranscricaoimage.service.ImageDescriptionService;
 import tcc.transcricao.tcctranscricaoimage.service.TtsService;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Component
 public class DescribeImageRoute extends RouteBuilder {
+
+    private static final String URL_SEND_MENSAGE = "http://whatsapp:3000/sendText?bridgeEndpoint=true&throwExceptionOnFailure=false";
+
+    private static final String URL_SEND_VOICE = "http://whatsapp:3000/sendVoice?bridgeEndpoint=true&throwExceptionOnFailure=false";
 
     @Autowired
     private ImageDescriptionService imageDescriptionService;
@@ -41,11 +46,14 @@ public class DescribeImageRoute extends RouteBuilder {
                 .routeId("whatsapp-webhook-route")
                 .log("Webhook do whatsapp recebido!")
                 .process(exchange -> {
-                    exchange.setProperty("startTime", System.currentTimeMillis());
                     String body = exchange.getIn().getBody(String.class);
                     JSONObject webhookJson = new JSONObject(body);
                     String phone = webhookJson.getString("from");
                     String imageBase64 = webhookJson.getJSONObject("media").getString("data");
+                    String imageId = UUID.randomUUID().toString();
+
+                    exchange.setProperty("startTime", System.currentTimeMillis());
+                    exchange.setProperty("imageId", imageId);
                     exchange.setProperty("phone", phone);
                     exchange.setProperty("imageBase64", imageBase64);
                 })
@@ -54,6 +62,16 @@ public class DescribeImageRoute extends RouteBuilder {
                 .to("direct:send-whatsapp-voice")
                 .to("direct:detail-db-metrics")
                 .log("Métricas salvas na base de dados!")
+                .process(exchange -> {
+                    String phone = (String) exchange.getProperty("phone");
+                    String imageId = (String) exchange.getProperty("imageId"); // Defina conforme seu contexto
+
+                    JSONObject json = new JSONObject();
+                    json.put("phone", phone);
+                    json.put("imageId", imageId);
+                    exchange.getIn().setBody(json.toString());
+                })
+                .to("direct:start-survey")
                 .setBody(constant("OK"));
 
         from("direct:detail-db-metrics")
@@ -70,13 +88,6 @@ public class DescribeImageRoute extends RouteBuilder {
                     long tempoEnvio = send - tts;
                     long tempoTotal = send - start;
 
-                    // Log detalhado
-//                    log.info("Tempo descrição: {}ms", tempoDescricao);
-//                    log.info("Tempo TTS: {}ms", tempoTts);
-//                    log.info("Tempo envio: {}ms", tempoEnvio);
-//                    log.info("Tempo total: {}ms", tempoTotal);
-
-                    // Salva métrica
                     PerformanceMetric metric = new PerformanceMetric();
                     metric.setTempoDescricao(tempoDescricao);
                     metric.setTempoTts(tempoTts);
@@ -96,20 +107,21 @@ public class DescribeImageRoute extends RouteBuilder {
                     exchange.getIn().setHeader("Content-Type", "application/json");
                     exchange.getIn().setBody(payload.toString());
                 })
-                .to("http://whatsapp:3000/sendText?bridgeEndpoint=true&throwExceptionOnFailure=false");
+                .to(URL_SEND_MENSAGE);
 
         from("direct:process-image-and-audio")
                 .log("Iniciando processamento de imagem e síntese de áudio")
                 .process(exchange -> {
-                    // Gera descrição da imagem
                     String imageBase64 = (String) exchange.getProperty("imageBase64");
                     String descricao = imageDescriptionService.getDescription(imageBase64);
+
                     exchange.setProperty("descricao", descricao);
                 })
                 .log("Descrição gerada!")
                 .process(exchange -> {
                     String descricao = (String) exchange.getProperty("descricao");
                     String audioBase64 = ttsService.synthesizeAsBase64(descricao);
+
                     exchange.setProperty("audioBase64", audioBase64);
                     exchange.setProperty("descTime", System.currentTimeMillis());
                 })
@@ -123,10 +135,11 @@ public class DescribeImageRoute extends RouteBuilder {
                     JSONObject payload = new JSONObject();
                     payload.put("to", to);
                     payload.put("audioBase64", audioBase64);
+
                     exchange.getIn().setHeader("Content-Type", "application/json");
                     exchange.getIn().setBody(payload.toString());
                     exchange.setProperty("ttsTime", System.currentTimeMillis());
                 })
-                .to("http://whatsapp:3000/sendVoice?bridgeEndpoint=true&throwExceptionOnFailure=false");
+                .to(URL_SEND_VOICE);
     }
 }
