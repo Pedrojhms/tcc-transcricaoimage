@@ -1,34 +1,50 @@
-# Use uma imagem Node.js oficial como base
 FROM node:20-alpine
-
-# Crie e defina o diretório de trabalho
 WORKDIR /app
 
-# Instale as dependências do sistema necessárias para o chromium do puppeteer
+# Install system dependencies
 RUN apk add --no-cache \
     chromium \
     nss \
     freetype \
+    freetype-dev \
     harfbuzz \
     ca-certificates \
     ttf-freefont \
-    nodejs \
-    yarn
+    curl \
+    dumb-init \
+    && rm -rf /var/cache/apk/*
 
-# Copie o package.json e o package-lock.json/yarn.lock
+# Create non-root user
+RUN addgroup -g 1001 -S nodegroup && \
+    adduser -S nodeuser -u 1001 -G nodegroup
+
+# Copy package files and install dependencies
 COPY package*.json ./
+RUN npm install --production && npm cache clean --force
 
-# Instale as dependências do Node.js
-RUN npm install
-
-# Copie o restante dos arquivos da aplicação
+# Copy application code
 COPY . .
 
-# Defina a variável de ambiente para o puppeteer usar o chromium do sistema
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+# Create directories and set permissions
+RUN mkdir -p /app/.wwebjs_auth /app/logs && \
+    chown -R nodeuser:nodegroup /app
 
-# Exponha a porta que você irá usar (ajuste conforme necessário)
+# Configure environment
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
+    NODE_ENV=production
+
+# Configure volumes
+VOLUME ["/app/.wwebjs_auth", "/app/logs"]
+
+# Switch to non-root user
+USER nodeuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:3000/health || exit 1
+
 EXPOSE 3000
 
-# Comando para rodar sua aplicação (ajuste conforme seu app)
+ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "index.js"]
