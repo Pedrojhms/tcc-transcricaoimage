@@ -5,6 +5,7 @@ const path = require('path');
 const axios = require('axios');
 const express = require('express');
 const bodyParser = require('body-parser');
+const puppeteer = require('puppeteer');
 
 const QR_SAVE_PATH = path.resolve(__dirname, 'qrcode.png');
 const app = express();
@@ -13,25 +14,38 @@ const URL_JAVA_APP = "http://app:8080/api";
 
 app.use(bodyParser.json({limit: '50mb'}));
 
-const puppeteer = require('puppeteer');
+// Estado por usuário
+// userState[userId] = { sentImage: bool, audioSent: bool, imageId: string, questionNumber: int }
+const userState = {};
 
-const browser = await puppeteer.launch({
-    headless: true,
-    executablePath: '/usr/bin/chromium-browser',
-    args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding'
-    ]
-});
+// Função para inicializar o Puppeteer
+async function initializePuppeteer() {
+    try {
+        const browser = await puppeteer.launch({
+            headless: true,
+            executablePath: '/usr/bin/chromium-browser',
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--disable-gpu',
+                '--disable-background-timer-throttling',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-renderer-backgrounding'
+            ]
+        });
+        console.log('Puppeteer inicializado com sucesso');
+        return browser;
+    } catch (error) {
+        console.error('Erro ao inicializar Puppeteer:', error);
+        return null;
+    }
+}
 
+// Configuração do cliente WhatsApp
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
@@ -39,10 +53,6 @@ const client = new Client({
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
 });
-
-// Estado por usuário
-// userState[userId] = { sentImage: bool, audioSent: bool, imageId: string, questionNumber: int }
-const userState = {};
 
 // QR code
 client.on('qr', (qr) => {
@@ -156,8 +166,6 @@ client.on('message', async (message) => {
     }
 });
 
-client.initialize();
-
 // --------- ENDPOINTS HTTP ---------
 
 // Enviar mensagem de texto
@@ -206,12 +214,6 @@ app.post('/sendVoice', async (req, res) => {
     }
 });
 
-// Inicia servidor HTTP (porta 3000)
-const PORT = 3000;
-app.listen(PORT, () => {
-    console.log(`Servidor HTTP escutando na porta ${PORT}`);
-});
-
 app.get('/health', (req, res) => {
     res.status(200).json({
         status: 'healthy',
@@ -219,3 +221,27 @@ app.get('/health', (req, res) => {
         uptime: process.uptime()
     });
 });
+
+// Função principal para inicializar tudo
+async function main() {
+    try {
+        // Inicializa Puppeteer (opcional, só se precisar)
+        await initializePuppeteer();
+
+        // Inicializa cliente WhatsApp
+        client.initialize();
+
+        // Inicia servidor HTTP
+        const PORT = 3000;
+        app.listen(PORT, () => {
+            console.log(`Servidor HTTP escutando na porta ${PORT}`);
+        });
+
+    } catch (error) {
+        console.error('Erro ao inicializar aplicação:', error);
+        process.exit(1);
+    }
+}
+
+// Chama a função principal
+main();
