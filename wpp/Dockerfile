@@ -1,10 +1,18 @@
 FROM node:20-alpine
 WORKDIR /app
 
-# Install only essential system dependencies
+# Install system dependencies including Chromium
 RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    freetype-dev \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont \
     curl \
     dumb-init \
+    && rm -rf /var/lib/apt/lists/* \
     && rm -rf /var/cache/apk/*
 
 # Create non-root user
@@ -18,13 +26,18 @@ RUN npm install --production && npm cache clean --force
 # Copy application code
 COPY . .
 
-# Create directories and set permissions
-RUN mkdir -p /app/.wwebjs_auth /app/logs && \
+# Create directories and set permissions BEFORE switching user
+RUN mkdir -p /app/.wwebjs_auth /app/logs /tmp/chrome-user-data && \
     chown -R nodeuser:nodegroup /app && \
-    chmod -R 755 /app/.wwebjs_auth
+    chown -R nodeuser:nodegroup /tmp/chrome-user-data && \
+    chmod -R 777 /app/.wwebjs_auth && \
+    chmod -R 755 /tmp/chrome-user-data
 
-# Configure environment
-ENV NODE_ENV=production
+# Configure environment for Puppeteer
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
+    NODE_ENV=production \
+    CHROME_DEVEL_SANDBOX=/usr/lib/chromium/chrome_sandbox
 
 # Configure volumes
 VOLUME ["/app/.wwebjs_auth", "/app/logs"]

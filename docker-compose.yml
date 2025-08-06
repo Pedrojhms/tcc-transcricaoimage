@@ -10,17 +10,15 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
       - NODE_ENV=production
     volumes:
       - whatsapp_sessions:/app/.wwebjs_auth
     working_dir: /app
-#    healthcheck:
-#      test: ["CMD", "curl", "-f", "http://whatsapp:3000/health"]
-#      interval: 30s
-#      timeout: 10s
-#      retries: 3
-#      start_period: 40s
+    # Adicionar configurações de segurança para Puppeteer
+    security_opt:
+      - seccomp:unconfined
+    shm_size: 2gb
     networks:
       - app-network
 

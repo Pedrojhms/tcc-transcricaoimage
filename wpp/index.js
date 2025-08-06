@@ -13,6 +13,25 @@ const URL_JAVA_APP = "http://app:8080/api";
 
 app.use(bodyParser.json({limit: '50mb'}));
 
+const puppeteer = require('puppeteer');
+
+const browser = await puppeteer.launch({
+    headless: true,
+    executablePath: '/usr/bin/chromium-browser',
+    args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding'
+    ]
+});
+
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
